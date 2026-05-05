@@ -88,6 +88,33 @@ def get_teachers_keyboard(data, page=0, per_page=27):
     markup.add(types.InlineKeyboardButton("🔙 К выбору роли", callback_data="back_to_role"))
     return markup
 
+def get_classes_keyboard(data, page=0, per_page=27):
+    if not data:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("Ошибка загрузки данных", callback_data="back_to_role"))
+        return markup
+    
+    classes = data.get('classes', {}).get('class', [])
+    start = page * per_page
+    end = start + per_page
+    page_classes = classes[start:end]
+    
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    buttons = [types.InlineKeyboardButton(text=c.get('_name', '???'), callback_data=f"set_class_{c['_id']}") for c in page_classes]
+    markup.add(*buttons)
+    
+    # Навигация
+    nav_row = []
+    if page > 0:
+        nav_row.append(types.InlineKeyboardButton("⬅️ Назад", callback_data=f"class_page_{page-1}"))
+    if end < len(classes):
+        nav_row.append(types.InlineKeyboardButton("Вперед ➡️", callback_data=f"class_page_{page+1}"))
+    if nav_row:
+        markup.row(*nav_row)
+    
+    markup.add(types.InlineKeyboardButton("🔙 К выбору роли", callback_data="back_to_role"))
+    return markup
+
 # --- ГЕНЕРАТОРЫ КЛАВИАТУР ---
 
 def get_role_keyboard():
@@ -167,6 +194,18 @@ def handle_teach_page(call):
         call.message.message_id, 
         reply_markup=markup
     )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('class_page_'))
+def handle_class_page(call):
+    page = int(call.data.split('_')[-1])
+    data = get_api_data()
+    markup = get_classes_keyboard(data, page)
+    bot.edit_message_text(
+        "Выберите вашу группу:", 
+        call.message.chat.id, 
+        call.message.message_id, 
+        reply_markup=markup
+    )
 @bot.callback_query_handler(func=lambda call: call.data.startswith('set_role_'))
 def handle_role_selection(call):
     role = call.data.split('_')[-1]
@@ -185,18 +224,8 @@ def handle_role_selection(call):
     markup = types.InlineKeyboardMarkup(row_width=2)
     
     if role == 'student':
-        # Загружаем список КЛАССОВ из API
-        classes = data.get('classes', {}).get('class', [])
-        
-        # Создаем кнопки с названиями классов, но называем процесс "выбором группы"
-        buttons = [
-            types.InlineKeyboardButton(
-                text=c['_name'], 
-                callback_data=f"set_class_{c['_id']}"
-            ) for c in classes
-        ]
-        
-        markup.add(*buttons)
+        # Загружаем список КЛАССОВ из API с пагинацией
+        markup = get_classes_keyboard(data, 0)
         bot.edit_message_text(
             "Выберите вашу группу:", 
             call.message.chat.id, 
